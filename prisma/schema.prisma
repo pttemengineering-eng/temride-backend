@@ -1,0 +1,306 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  PASSENGER
+  DRIVER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  BANNED
+  SUSPENDED
+}
+
+enum KycStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum OrderStatus {
+  SEARCHING
+  DRIVER_FOUND
+  DRIVER_ON_WAY
+  ARRIVED
+  IN_TRIP
+  COMPLETED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  QRIS
+  GOPAY
+  OVO
+  DANA
+  VA_BNI
+  VA_BRI
+  VA_MANDIRI
+  CASH
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
+}
+
+enum VehicleType {
+  MOTORCYCLE
+  CAR
+}
+
+enum VoucherStatus {
+  ACTIVE
+  USED
+  EXPIRED
+}
+
+enum WalletTransactionType {
+  EARNING
+  CREDIT_DEDUCTION
+  WITHDRAWAL
+  BONUS
+}
+
+enum OtpPurpose {
+  LOGIN
+  REGISTER
+  RESET
+}
+
+enum PromoType {
+  PERCENT
+  FIXED
+}
+
+model User {
+  id        String     @id @default(uuid())
+  name      String?
+  phone     String     @unique
+  email     String?    @unique
+  role      Role       @default(PASSENGER)
+  status    UserStatus @default(ACTIVE)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  driverProfile      DriverProfile?
+  ordersAsPassenger  Order[]            @relation("PassengerOrders")
+  ordersAsDriver     Order[]            @relation("DriverOrders")
+  payments           Payment[]
+  ratingsGiven       Rating[]           @relation("RatingsGiven")
+  ratingsReceived    Rating[]           @relation("RatingsReceived")
+  otpCodes           OTPCode[]
+  chargingVouchers   ChargingVoucher[]
+
+  @@map("users")
+}
+
+model DriverProfile {
+  id                  String    @id @default(uuid())
+  userId              String    @unique
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  licenseNo           String?
+  licensePhoto        String?
+  vehiclePhoto        String?
+  vehicleIdNo         String?
+  vehicleType         String?
+  batteryLevel        Float     @default(100.0)
+  isOnline            Boolean   @default(false)
+  currentLat          Float?
+  currentLng          Float?
+  rating              Float     @default(0.0)
+  totalTrips          Int       @default(0)
+  creditBalance       Float     @default(0.0)
+  creditDeductedTotal Float     @default(0.0)
+  kycStatus           KycStatus @default(PENDING)
+  kycRejectedReason   String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  vehicle     Vehicle?
+  wallet      DriverWallet?
+
+  @@map("driver_profiles")
+}
+
+model Vehicle {
+  id                    String       @id @default(uuid())
+  driverId              String       @unique
+  driver                DriverProfile @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  brand                 String
+  model                 String
+  year                  Int
+  plateNo               String       @unique
+  type                  VehicleType  @default(MOTORCYCLE)
+  isElectric            Boolean      @default(true)
+  purchasePrice         Float        @default(0)
+  creditMonthlyDeduction Float       @default(0)
+  creditWeeksRemaining  Int          @default(0)
+  creditPaidTotal       Float        @default(0)
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+
+  @@map("vehicles")
+}
+
+model Order {
+  id             String        @id @default(uuid())
+  passengerId    String
+  passenger      User          @relation("PassengerOrders", fields: [passengerId], references: [id])
+  driverId       String?
+  driver         User?         @relation("DriverOrders", fields: [driverId], references: [id])
+  status         OrderStatus   @default(SEARCHING)
+  pickupLat      Float
+  pickupLng      Float
+  pickupAddress  String
+  destLat        Float
+  destLng        Float
+  destAddress    String
+  distance       Float         @default(0)
+  duration       Int           @default(0)
+  baseFare       Float         @default(0)
+  perKmFare      Float         @default(0)
+  surgeFactor    Float         @default(1.0)
+  totalFare      Float         @default(0)
+  driverEarnings Float         @default(0)
+  platformFee    Float         @default(0)
+  promoCode      String?
+  promoDiscount  Float         @default(0)
+  paymentMethod  PaymentMethod @default(CASH)
+  paymentStatus  PaymentStatus @default(PENDING)
+  cancelReason   String?
+  cancelledBy    String?
+  createdAt      DateTime      @default(now())
+  completedAt    DateTime?
+  updatedAt      DateTime      @updatedAt
+
+  payment             Payment?
+  rating              Rating?
+  walletTransactions  WalletTransaction[]
+
+  @@map("orders")
+}
+
+model Payment {
+  id               String        @id @default(uuid())
+  orderId          String        @unique
+  order            Order         @relation(fields: [orderId], references: [id])
+  userId           String
+  user             User          @relation(fields: [userId], references: [id])
+  amount           Float
+  method           PaymentMethod
+  status           PaymentStatus @default(PENDING)
+  midtransOrderId  String?       @unique
+  midtransToken    String?
+  snapUrl          String?
+  paidAt           DateTime?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  @@map("payments")
+}
+
+model DriverWallet {
+  id                  String   @id @default(uuid())
+  driverId            String   @unique
+  driver              DriverProfile @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  balance             Float    @default(0)
+  totalEarnings       Float    @default(0)
+  totalWithdrawn      Float    @default(0)
+  totalCreditDeducted Float    @default(0)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  transactions WalletTransaction[]
+
+  @@map("driver_wallets")
+}
+
+model WalletTransaction {
+  id          String                @id @default(uuid())
+  walletId    String
+  wallet      DriverWallet          @relation(fields: [walletId], references: [id])
+  type        WalletTransactionType
+  amount      Float
+  description String?
+  orderId     String?
+  order       Order?                @relation(fields: [orderId], references: [id])
+  createdAt   DateTime              @default(now())
+
+  @@map("wallet_transactions")
+}
+
+model ChargingVoucher {
+  id            String        @id @default(uuid())
+  code          String        @unique
+  driverId      String
+  driver        User          @relation(fields: [driverId], references: [id])
+  amount        Float
+  status        VoucherStatus @default(ACTIVE)
+  purchasePrice Float
+  purchasedAt   DateTime      @default(now())
+  usedAt        DateTime?
+  expiresAt     DateTime
+
+  @@map("charging_vouchers")
+}
+
+model Rating {
+  id        String   @id @default(uuid())
+  orderId   String   @unique
+  order     Order    @relation(fields: [orderId], references: [id])
+  raterId   String
+  rater     User     @relation("RatingsGiven", fields: [raterId], references: [id])
+  ratedId   String
+  rated     User     @relation("RatingsReceived", fields: [ratedId], references: [id])
+  score     Int
+  comment   String?
+  createdAt DateTime @default(now())
+
+  @@map("ratings")
+}
+
+model OTPCode {
+  id        String     @id @default(uuid())
+  phone     String
+  code      String
+  purpose   OtpPurpose
+  expiresAt DateTime
+  isUsed    Boolean    @default(false)
+  userId    String?
+  user      User?      @relation(fields: [userId], references: [id])
+  createdAt DateTime   @default(now())
+
+  @@map("otp_codes")
+}
+
+model PromoCode {
+  id          String    @id @default(uuid())
+  code        String    @unique
+  type        PromoType
+  value       Float
+  maxDiscount Float?
+  minOrder    Float     @default(0)
+  usageLimit  Int       @default(1)
+  usedCount   Int       @default(0)
+  expiresAt   DateTime
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("promo_codes")
+}
