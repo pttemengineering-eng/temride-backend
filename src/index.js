@@ -26,6 +26,7 @@ const restaurantRoutes = require('./routes/restaurant.routes');
 const walletRoutes = require('./routes/wallet.routes');
 const driverRegistrationRoutes = require('./routes/driverRegistration.routes');
 const pricingRoutes = require('./routes/pricing.routes');
+const chatRoutes = require('./routes/chat.routes');
 
 const app = express();
 const server = http.createServer(app);
@@ -127,4 +128,3 @@ process.on('uncaughtException', (error) => {
 });
 
 module.exports = { app, server, io };
- io };

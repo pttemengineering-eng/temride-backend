@@ -3,7 +3,6 @@
 const express = require('express');
 const router = express.Router();
 const orderController = require('../controllers/order.controller');
-const pricingController = require('../controllers/pricing.controller');
 const { authenticate } = require('../middleware/auth.middleware');
 const { isPassenger, isDriver } = require('../middleware/role.middleware');
 
@@ -11,9 +10,6 @@ router.use(authenticate);
 
 // POST /api/orders/request — Passenger requests a ride
 router.post('/request', isPassenger, orderController.requestOrder);
-
-// POST /api/orders/calculate-fare — Fare estimate before booking
-router.post('/calculate-fare', isPassenger, pricingController.calculateFare);
 
 // GET /api/orders/:id — Get order detail
 router.get('/:id', orderController.getOrder);

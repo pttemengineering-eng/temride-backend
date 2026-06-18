@@ -527,7 +527,7 @@ const getAllPassengers = async (req, res) => {
         email: true,
         status: true,
         createdAt: true,
-        _count: { select: { orders: true } },
+        _count: { select: { ordersAsPassenger: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -550,7 +550,7 @@ const getAdminFoodOrders = async (req, res) => {
   try {
     const orders = await prisma.foodOrder.findMany({
       include: {
-        user: { select: { name: true, phone: true } },
+        passenger: { select: { name: true, phone: true } },
         restaurant: { select: { name: true } },
         driver: { select: { name: true } },
         items: { include: { menu: { select: { name: true, price: true } } } },
