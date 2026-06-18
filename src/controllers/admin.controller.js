@@ -512,6 +512,36 @@ const processWithdrawal = async (req, res) => {
   }
 };
 
+/**
+ * GET /api/admin/passengers
+ * List all passengers (users with role PASSENGER)
+ */
+const getAllPassengers = async (req, res) => {
+  try {
+    const passengers = await prisma.user.findMany({
+      where: { role: 'PASSENGER' },
+      select: {
+        id: true,
+        phone: true,
+        name: true,
+        email: true,
+        status: true,
+        createdAt: true,
+        _count: { select: { orders: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    return res.json({
+      success: true,
+      passengers,
+      total: passengers.length,
+    });
+  } catch (err) {
+    console.error('getAllPassengers error:', err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 module.exports = {
   getDashboardStats,
   getAllDrivers,
@@ -525,4 +555,5 @@ module.exports = {
   deleteUser,
   getWithdrawalRequests,
   processWithdrawal,
+  getAllPassengers,
 };

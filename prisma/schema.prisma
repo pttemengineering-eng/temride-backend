@@ -407,6 +407,56 @@ model GoSendOrder {
   @@map("gosend_orders")
 }
 
+// ─── Driver Registration / Application ───────────────────────────────────────
+
+model DriverApplication {
+  id                 String    @id @default(uuid())
+  registrationNumber String    @unique
+
+  // Data diri
+  fullName           String
+  nik                String
+  phone              String
+  email              String?
+  birthDate          String?
+  address            String?
+  city               String    // BALIKPAPAN / SAMARINDA
+
+  // Kendaraan
+  vehicleType        String    // MOTOR / MOBIL
+  hasOwnVehicle      Boolean   @default(false)
+  vehicleBrand       String?
+  vehicleModel       String?
+  vehicleYear        String?
+  vehiclePlate       String?
+
+  // Kredit
+  requestCredit      Boolean   @default(false)
+  creditPackage      String?   // MOTOR_STANDARD / MOTOR_PREMIUM / MOBIL
+
+  // Dokumen (URLs)
+  ktpPhotoUrl        String?
+  simPhotoUrl        String?
+  selfiePhotoUrl     String?
+  stnkPhotoUrl       String?
+  bankBookUrl        String?
+  kkPhotoUrl         String?
+  salarySlipUrl      String?
+
+  // Status
+  // PENDING → DOCUMENT_CHECK → INTERVIEW → CREDIT_CHECK → APPROVED → REJECTED
+  status             String    @default("PENDING")
+
+  notes              String?
+  reviewedBy         String?
+  reviewedAt         DateTime?
+
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@map("driver_applications")
+}
+
 // ─── WithdrawalRequest Model ──────────────────────────────────────────────────
 
 model WithdrawalRequest {

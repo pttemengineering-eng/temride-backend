@@ -44,6 +44,9 @@ router.get('/restaurants', adminController.getAdminRestaurants);
 router.get('/gosend', adminController.getAdminGoSend);
 
 // ─── Users ────────────────────────────────────────────────────────────────────
+// GET /api/admin/passengers — List all passengers
+router.get('/passengers', adminController.getAllPassengers);
+
 // DELETE /api/admin/users/:id — Delete/ban user
 router.delete('/users/:id', adminController.deleteUser);
 

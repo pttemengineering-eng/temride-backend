@@ -24,6 +24,7 @@ const testRoutes = require('./routes/test.routes');
 const gosendRoutes = require('./routes/gosend.routes');
 const restaurantRoutes = require('./routes/restaurant.routes');
 const walletRoutes = require('./routes/wallet.routes');
+const driverRegistrationRoutes = require('./routes/driverRegistration.routes');
 
 const app = express();
 const server = http.createServer(app);
@@ -79,6 +80,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/test', testRoutes);
 app.use('/api/gosend', gosendRoutes);
 app.use('/api/wallet', walletRoutes);
+app.use('/api/driver-registration', driverRegistrationRoutes);
 // Restaurant & food-order routes share the same router (mounted at /api)
 app.use('/api', restaurantRoutes);
 
