@@ -543,6 +543,50 @@ const getAllPassengers = async (req, res) => {
 };
 
 /**
+ * GET /api/admin/food-orders
+ * All food orders (TFood) for admin
+ */
+const getAdminFoodOrders = async (req, res) => {
+  try {
+    const orders = await prisma.foodOrder.findMany({
+      include: {
+        user: { select: { name: true, phone: true } },
+        restaurant: { select: { name: true } },
+        driver: { select: { name: true } },
+        items: { include: { menu: { select: { name: true, price: true } } } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+    res.json({ success: true, orders, total: orders.length });
+  } catch (err) {
+    console.error('getAdminFoodOrders error:', err);
+    res.status(500).json({ success: false, message: err.message, orders: [] });
+  }
+};
+
+/**
+ * GET /api/admin/vouchers-list
+ * List all vouchers/promo codes for admin
+ */
+const getAdminVouchers = async (req, res) => {
+  try {
+    const vouchers = await prisma.promoCode.findMany({
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json({ success: true, vouchers, total: vouchers.length });
+  } catch (err) {
+    // Try alternative model name
+    try {
+      const vouchers = await prisma.voucher.findMany({ orderBy: { createdAt: 'desc' } });
+      res.json({ success: true, vouchers, total: vouchers.length });
+    } catch {
+      res.json({ success: true, vouchers: [], total: 0, note: 'No vouchers yet' });
+    }
+  }
+};
+
+/**
  * GET /api/admin/drivers/:driverId/metrics
  * Driver performance metrics (7-day window)
  */
@@ -598,5 +642,7 @@ module.exports = {
   getWithdrawalRequests,
   processWithdrawal,
   getAllPassengers,
+  getAdminFoodOrders,
+  getAdminVouchers,
   getDriverMetrics,
 };

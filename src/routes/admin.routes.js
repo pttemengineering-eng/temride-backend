@@ -46,6 +46,12 @@ router.get('/restaurants', adminController.getAdminRestaurants);
 // GET /api/admin/gosend — Manage GoSend orders
 router.get('/gosend', adminController.getAdminGoSend);
 
+// GET /api/admin/food-orders — TFood orders
+router.get('/food-orders', adminController.getAdminFoodOrders);
+
+// GET /api/admin/vouchers-list — List all vouchers/promo codes
+router.get('/vouchers-list', adminController.getAdminVouchers);
+
 // ─── Users ────────────────────────────────────────────────────────────────────
 // GET /api/admin/passengers — List all passengers
 router.get('/passengers', adminController.getAllPassengers);
