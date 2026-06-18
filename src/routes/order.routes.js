@@ -33,4 +33,7 @@ router.post('/:id/complete', isDriver, orderController.completeOrder);
 // POST /api/orders/:id/cancel — Cancel order (passenger or driver)
 router.post('/:id/cancel', orderController.cancelOrder);
 
+// POST /api/orders/:id/sos — SOS/Emergency button (passenger only)
+router.post('/:id/sos', isPassenger, orderController.sosEmergency);
+
 module.exports = router;

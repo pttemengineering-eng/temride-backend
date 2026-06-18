@@ -105,6 +105,10 @@ model User {
   ratingsReceived    Rating[]           @relation("RatingsReceived")
   otpCodes           OTPCode[]
   chargingVouchers   ChargingVoucher[]
+  foodOrdersAsPassenger FoodOrder[]    @relation("FoodOrderPassenger")
+  foodOrdersAsDriver    FoodOrder[]    @relation("FoodOrderDriver")
+  goSendOrdersAsPassenger GoSendOrder[] @relation("GoSendPassenger")
+  goSendOrdersAsDriver    GoSendOrder[] @relation("GoSendDriver")
 
   @@map("users")
 }
@@ -225,7 +229,8 @@ model DriverWallet {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
-  transactions WalletTransaction[]
+  transactions        WalletTransaction[]
+  withdrawalRequests  WithdrawalRequest[]
 
   @@map("driver_wallets")
 }
@@ -299,8 +304,124 @@ model PromoCode {
   usedCount   Int       @default(0)
   expiresAt   DateTime
   isActive    Boolean   @default(true)
+  description String?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
   @@map("promo_codes")
+}
+
+// ─── Restaurant / GoFood Models ──────────────────────────────────────────────
+
+model Restaurant {
+  id        String   @id @default(uuid())
+  name      String
+  address   String
+  phone     String
+  category  String
+  imageUrl  String?
+  isOpen    Boolean  @default(true)
+  rating    Float    @default(0)
+  menus     Menu[]
+  orders    FoodOrder[]
+  createdAt DateTime @default(now())
+
+  @@map("restaurants")
+}
+
+model Menu {
+  id           String     @id @default(uuid())
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  name         String
+  description  String?
+  price        Int
+  imageUrl     String?
+  isAvailable  Boolean    @default(true)
+  category     String?
+  orderItems   FoodOrderItem[]
+
+  @@map("menus")
+}
+
+model FoodOrder {
+  id              String          @id @default(uuid())
+  passengerId     String
+  passenger       User            @relation("FoodOrderPassenger", fields: [passengerId], references: [id])
+  driverId        String?
+  driver          User?           @relation("FoodOrderDriver", fields: [driverId], references: [id])
+  restaurantId    String
+  restaurant      Restaurant      @relation(fields: [restaurantId], references: [id])
+  items           FoodOrderItem[]
+  status          String          @default("PENDING")
+  deliveryAddress String
+  deliveryFee     Int             @default(0)
+  subtotal        Int             @default(0)
+  totalAmount     Int             @default(0)
+  paymentStatus   String          @default("UNPAID")
+  paymentMethod   String          @default("CASH")
+  notes           String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@map("food_orders")
+}
+
+model FoodOrderItem {
+  id          String    @id @default(uuid())
+  foodOrderId String
+  foodOrder   FoodOrder @relation(fields: [foodOrderId], references: [id], onDelete: Cascade)
+  menuId      String
+  menu        Menu      @relation(fields: [menuId], references: [id])
+  qty         Int
+  price       Int
+  subtotal    Int
+
+  @@map("food_order_items")
+}
+
+// ─── GoSend Model ─────────────────────────────────────────────────────────────
+
+model GoSendOrder {
+  id                 String   @id @default(uuid())
+  passengerId        String
+  passenger          User     @relation("GoSendPassenger", fields: [passengerId], references: [id])
+  driverId           String?
+  driver             User?    @relation("GoSendDriver", fields: [driverId], references: [id])
+  pickupAddress      String
+  destinationAddress String
+  packageDesc        String
+  packageWeight      Float    @default(1)
+  senderName         String
+  recipientName      String
+  recipientPhone     String
+  status             String   @default("PENDING")
+  fare               Int      @default(0)
+  paymentStatus      String   @default("UNPAID")
+  paymentMethod      String   @default("CASH")
+  cancelReason       String?
+  cancelledBy        String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@map("gosend_orders")
+}
+
+// ─── WithdrawalRequest Model ──────────────────────────────────────────────────
+
+model WithdrawalRequest {
+  id            String   @id @default(uuid())
+  walletId      String
+  wallet        DriverWallet @relation(fields: [walletId], references: [id])
+  amount        Float
+  bankName      String
+  accountNumber String
+  accountName   String
+  status        String   @default("PENDING")
+  adminNote     String?
+  processedAt   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("withdrawal_requests")
 }

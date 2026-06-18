@@ -6,10 +6,78 @@ const { success, error } = require('../utils/response.helper');
 const prisma = new PrismaClient();
 
 /**
+ * GET /api/admin/dashboard-stats
+ * Full overview: users, orders, drivers, revenue
+ */
+const getDashboardStats = async (req, res) => {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const [
+      totalUsers,
+      totalPassengers,
+      totalDrivers,
+      activeDrivers,
+      pendingKyc,
+      totalOrders,
+      todayOrders,
+      completedOrders,
+      cancelledOrders,
+      totalRevenue,
+      totalRestaurants,
+      totalFoodOrders,
+      totalGoSendOrders,
+    ] = await Promise.all([
+      prisma.user.count(),
+      prisma.user.count({ where: { role: 'PASSENGER' } }),
+      prisma.user.count({ where: { role: 'DRIVER' } }),
+      prisma.driverProfile.count({ where: { isOnline: true } }),
+      prisma.driverProfile.count({ where: { kycStatus: 'PENDING' } }),
+      prisma.order.count(),
+      prisma.order.count({ where: { createdAt: { gte: today } } }),
+      prisma.order.count({ where: { status: 'COMPLETED' } }),
+      prisma.order.count({ where: { status: 'CANCELLED' } }),
+      prisma.order.aggregate({
+        _sum: { platformFee: true },
+        where: { status: 'COMPLETED' },
+      }),
+      prisma.restaurant.count().catch(() => 0),
+      prisma.foodOrder.count().catch(() => 0),
+      prisma.goSendOrder.count().catch(() => 0),
+    ]);
+
+    return res.json(success('Dashboard stats retrieved', {
+      users: { total: totalUsers, passengers: totalPassengers, drivers: totalDrivers },
+      drivers: { active: activeDrivers, pendingKyc },
+      orders: {
+        total: totalOrders,
+        today: todayOrders,
+        completed: completedOrders,
+        cancelled: cancelledOrders,
+        completionRate: totalOrders > 0 ? Math.round((completedOrders / totalOrders) * 100) : 0,
+      },
+      revenue: {
+        total: totalRevenue._sum.platformFee || 0,
+      },
+      features: {
+        restaurants: totalRestaurants,
+        foodOrders: totalFoodOrders,
+        goSendOrders: totalGoSendOrders,
+      },
+    }));
+  } catch (err) {
+    console.error('getDashboardStats error:', err);
+    return res.status(500).json(error('Failed to get dashboard stats', err.message));
+  }
+};
+
+/**
  * GET /api/admin/drivers
+ * List all drivers with status and rating
  */
 const getAllDrivers = async (req, res) => {
-  const { page = 1, limit = 20, kycStatus, search } = req.query;
+  const { page = 1, limit = 20, kycStatus, search, isOnline } = req.query;
   const skip = (parseInt(page) - 1) * parseInt(limit);
 
   const where = { role: 'DRIVER' };
@@ -21,13 +89,10 @@ const getAllDrivers = async (req, res) => {
     ];
   }
 
-  const driverWhere = {};
-  if (kycStatus) driverWhere.driverProfile = { kycStatus };
-
   try {
-    const [drivers, total] = await Promise.all([
+    let [drivers, total] = await Promise.all([
       prisma.user.findMany({
-        where: { ...where },
+        where,
         include: {
           driverProfile: { include: { vehicle: true, wallet: true } },
         },
@@ -38,12 +103,17 @@ const getAllDrivers = async (req, res) => {
       prisma.user.count({ where }),
     ]);
 
-    const filtered = kycStatus
-      ? drivers.filter((d) => d.driverProfile?.kycStatus === kycStatus)
-      : drivers;
+    // Filter by kycStatus and isOnline after fetching
+    if (kycStatus) {
+      drivers = drivers.filter((d) => d.driverProfile?.kycStatus === kycStatus);
+    }
+    if (isOnline !== undefined) {
+      const onlineFlag = isOnline === 'true';
+      drivers = drivers.filter((d) => d.driverProfile?.isOnline === onlineFlag);
+    }
 
     return res.json(success('Drivers retrieved', {
-      drivers: filtered,
+      drivers,
       pagination: { total, page: parseInt(page), limit: parseInt(limit), totalPages: Math.ceil(total / parseInt(limit)) },
     }));
   } catch (err) {
@@ -53,14 +123,63 @@ const getAllDrivers = async (req, res) => {
 };
 
 /**
- * PUT /api/admin/drivers/:id/approve
+ * POST /api/admin/drivers
+ * Add a driver manually (admin creates user + driverProfile)
  */
-const approveDriver = async (req, res) => {
-  const { id } = req.params; // userId
-  const { action, reason } = req.body; // action: 'APPROVE' | 'REJECT'
+const addDriver = async (req, res) => {
+  const { name, phone, email, licenseNo, vehicleType } = req.body;
+
+  if (!name || !phone) {
+    return res.status(400).json(error('name and phone are required'));
+  }
+
+  try {
+    const existing = await prisma.user.findUnique({ where: { phone } });
+    if (existing) return res.status(409).json(error('Phone number already registered'));
+
+    const user = await prisma.$transaction(async (tx) => {
+      const newUser = await tx.user.create({
+        data: { name, phone, email, role: 'DRIVER' },
+      });
+
+      const profile = await tx.driverProfile.create({
+        data: {
+          userId: newUser.id,
+          licenseNo,
+          vehicleType,
+          kycStatus: 'PENDING',
+        },
+      });
+
+      await tx.driverWallet.create({
+        data: { driverId: profile.id },
+      });
+
+      return newUser;
+    });
+
+    const fullUser = await prisma.user.findUnique({
+      where: { id: user.id },
+      include: { driverProfile: true },
+    });
+
+    return res.status(201).json(success('Driver added', { driver: fullUser }));
+  } catch (err) {
+    console.error('addDriver error:', err);
+    return res.status(500).json(error('Failed to add driver', err.message));
+  }
+};
+
+/**
+ * PATCH /api/admin/drivers/:id/verify
+ * Approve or reject driver KYC
+ */
+const verifyDriver = async (req, res) => {
+  const { id } = req.params;
+  const { action, reason } = req.body;
 
   if (!['APPROVE', 'REJECT'].includes(action)) {
-    return res.status(400).json(error('Action must be APPROVE or REJECT'));
+    return res.status(400).json(error('action must be APPROVE or REJECT'));
   }
 
   try {
@@ -79,20 +198,28 @@ const approveDriver = async (req, res) => {
 
     return res.json(success(`Driver KYC ${kycStatus.toLowerCase()}`, { driverProfile: updated }));
   } catch (err) {
-    console.error('approveDriver error:', err);
-    return res.status(500).json(error('Failed to update driver KYC', err.message));
+    console.error('verifyDriver error:', err);
+    return res.status(500).json(error('Failed to verify driver', err.message));
   }
 };
 
 /**
+ * PUT /api/admin/drivers/:id/approve
+ * Legacy alias for verifyDriver
+ */
+const approveDriver = verifyDriver;
+
+/**
  * GET /api/admin/orders
+ * All orders with filters
  */
 const getAllOrders = async (req, res) => {
-  const { page = 1, limit = 20, status, from, to } = req.query;
+  const { page = 1, limit = 20, status, from, to, paymentMethod } = req.query;
   const skip = (parseInt(page) - 1) * parseInt(limit);
 
   const where = {};
   if (status) where.status = status;
+  if (paymentMethod) where.paymentMethod = paymentMethod;
   if (from || to) {
     where.createdAt = {};
     if (from) where.createdAt.gte = new Date(from);
@@ -129,7 +256,7 @@ const getAllOrders = async (req, res) => {
  * GET /api/admin/revenue
  */
 const getRevenue = async (req, res) => {
-  const { from, to, period = 'daily' } = req.query;
+  const { from, to } = req.query;
 
   const startDate = from ? new Date(from) : new Date(Date.now() - 30 * 86400 * 1000);
   const endDate = to ? new Date(to) : new Date();
@@ -154,7 +281,6 @@ const getRevenue = async (req, res) => {
     const totalFare = completedOrders.reduce((s, o) => s + o.totalFare, 0);
     const totalDriverEarnings = completedOrders.reduce((s, o) => s + o.driverEarnings, 0);
 
-    // Group by day
     const dailyRevenue = {};
     completedOrders.forEach((o) => {
       const day = (o.completedAt || new Date()).toISOString().slice(0, 10);
@@ -164,7 +290,6 @@ const getRevenue = async (req, res) => {
       dailyRevenue[day].orders += 1;
     });
 
-    // Payment method breakdown
     const paymentBreakdown = {};
     completedOrders.forEach((o) => {
       paymentBreakdown[o.paymentMethod] = (paymentBreakdown[o.paymentMethod] || 0) + 1;
@@ -172,12 +297,7 @@ const getRevenue = async (req, res) => {
 
     return res.json(success('Revenue data retrieved', {
       period: { from: startDate, to: endDate },
-      summary: {
-        totalOrders: completedOrders.length,
-        totalFare,
-        totalRevenue,
-        totalDriverEarnings,
-      },
+      summary: { totalOrders: completedOrders.length, totalFare, totalRevenue, totalDriverEarnings },
       dailyRevenue,
       paymentBreakdown,
     }));
@@ -188,58 +308,221 @@ const getRevenue = async (req, res) => {
 };
 
 /**
- * GET /api/admin/dashboard-stats
+ * GET /api/admin/restaurants
+ * Manage restaurants
  */
-const getDashboardStats = async (req, res) => {
-  try {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+const getAdminRestaurants = async (req, res) => {
+  const { page = 1, limit = 20, search, category } = req.query;
+  const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    const [
-      totalUsers,
-      totalPassengers,
-      totalDrivers,
-      activeDrivers,
-      pendingKyc,
-      totalOrders,
-      todayOrders,
-      completedOrders,
-      cancelledOrders,
-      totalRevenue,
-    ] = await Promise.all([
-      prisma.user.count(),
-      prisma.user.count({ where: { role: 'PASSENGER' } }),
-      prisma.user.count({ where: { role: 'DRIVER' } }),
-      prisma.driverProfile.count({ where: { isOnline: true } }),
-      prisma.driverProfile.count({ where: { kycStatus: 'PENDING' } }),
-      prisma.order.count(),
-      prisma.order.count({ where: { createdAt: { gte: today } } }),
-      prisma.order.count({ where: { status: 'COMPLETED' } }),
-      prisma.order.count({ where: { status: 'CANCELLED' } }),
-      prisma.order.aggregate({
-        _sum: { platformFee: true },
-        where: { status: 'COMPLETED' },
+  const where = {};
+  if (category) where.category = category;
+  if (search) {
+    where.OR = [
+      { name: { contains: search, mode: 'insensitive' } },
+      { address: { contains: search, mode: 'insensitive' } },
+    ];
+  }
+
+  try {
+    const [restaurants, total] = await Promise.all([
+      prisma.restaurant.findMany({
+        where,
+        include: {
+          _count: { select: { menus: true, orders: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: parseInt(limit),
       }),
+      prisma.restaurant.count({ where }),
     ]);
 
-    return res.json(success('Dashboard stats retrieved', {
-      users: { total: totalUsers, passengers: totalPassengers, drivers: totalDrivers },
-      drivers: { active: activeDrivers, pendingKyc },
-      orders: {
-        total: totalOrders,
-        today: todayOrders,
-        completed: completedOrders,
-        cancelled: cancelledOrders,
-        completionRate: totalOrders > 0 ? Math.round((completedOrders / totalOrders) * 100) : 0,
-      },
-      revenue: {
-        total: totalRevenue._sum.platformFee || 0,
-      },
+    return res.json(success('Restaurants retrieved', {
+      restaurants,
+      pagination: { total, page: parseInt(page), limit: parseInt(limit), totalPages: Math.ceil(total / parseInt(limit)) },
     }));
   } catch (err) {
-    console.error('getDashboardStats error:', err);
-    return res.status(500).json(error('Failed to get dashboard stats', err.message));
+    console.error('getAdminRestaurants error:', err);
+    return res.status(500).json(error('Failed to get restaurants', err.message));
   }
 };
 
-module.exports = { getAllDrivers, approveDriver, getAllOrders, getRevenue, getDashboardStats };
+/**
+ * GET /api/admin/gosend
+ * Manage GoSend orders
+ */
+const getAdminGoSend = async (req, res) => {
+  const { page = 1, limit = 20, status } = req.query;
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+
+  const where = {};
+  if (status) where.status = status;
+
+  try {
+    const [orders, total] = await Promise.all([
+      prisma.goSendOrder.findMany({
+        where,
+        include: {
+          passenger: { select: { id: true, name: true, phone: true } },
+          driver: { select: { id: true, name: true, phone: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: parseInt(limit),
+      }),
+      prisma.goSendOrder.count({ where }),
+    ]);
+
+    return res.json(success('GoSend orders retrieved', {
+      orders,
+      pagination: { total, page: parseInt(page), limit: parseInt(limit), totalPages: Math.ceil(total / parseInt(limit)) },
+    }));
+  } catch (err) {
+    console.error('getAdminGoSend error:', err);
+    return res.status(500).json(error('Failed to get GoSend orders', err.message));
+  }
+};
+
+/**
+ * DELETE /api/admin/users/:id
+ * Delete a user (soft delete by banning)
+ */
+const deleteUser = async (req, res) => {
+  const { id } = req.params;
+  const { permanent = false } = req.query;
+
+  try {
+    const user = await prisma.user.findUnique({ where: { id } });
+    if (!user) return res.status(404).json(error('User not found'));
+
+    if (permanent === 'true') {
+      // Hard delete
+      await prisma.user.delete({ where: { id } });
+      return res.json(success('User permanently deleted', { userId: id }));
+    } else {
+      // Soft delete — ban the user
+      const updated = await prisma.user.update({
+        where: { id },
+        data: { status: 'BANNED' },
+      });
+      return res.json(success('User banned', { user: { id: updated.id, status: updated.status } }));
+    }
+  } catch (err) {
+    console.error('deleteUser error:', err);
+    return res.status(500).json(error('Failed to delete user', err.message));
+  }
+};
+
+/**
+ * GET /api/admin/withdrawals
+ * List all withdrawal requests with optional filter
+ */
+const getWithdrawalRequests = async (req, res) => {
+  const { page = 1, limit = 20, status } = req.query;
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+
+  const where = {};
+  if (status) where.status = status;
+
+  try {
+    const [withdrawals, total] = await Promise.all([
+      prisma.withdrawalRequest.findMany({
+        where,
+        include: {
+          wallet: {
+            include: {
+              driver: { include: { user: { select: { id: true, name: true, phone: true } } } },
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: parseInt(limit),
+      }),
+      prisma.withdrawalRequest.count({ where }),
+    ]);
+
+    return res.json(success('Withdrawals retrieved', {
+      withdrawals,
+      pagination: { total, page: parseInt(page), limit: parseInt(limit), totalPages: Math.ceil(total / parseInt(limit)) },
+    }));
+  } catch (err) {
+    console.error('getWithdrawalRequests error:', err);
+    return res.status(500).json(error('Failed to get withdrawals', err.message));
+  }
+};
+
+/**
+ * PATCH /api/admin/withdrawals/:id
+ * Approve or reject a withdrawal
+ */
+const processWithdrawal = async (req, res) => {
+  const { id } = req.params;
+  const { action, adminNote } = req.body;
+
+  if (!['APPROVE', 'REJECT'].includes(action)) {
+    return res.status(400).json(error('action must be APPROVE or REJECT'));
+  }
+
+  try {
+    const withdrawal = await prisma.withdrawalRequest.findUnique({ where: { id } });
+    if (!withdrawal) return res.status(404).json(error('Withdrawal not found'));
+    if (withdrawal.status !== 'PENDING') {
+      return res.status(409).json(error(`Withdrawal already ${withdrawal.status}`));
+    }
+
+    if (action === 'APPROVE') {
+      await prisma.withdrawalRequest.update({
+        where: { id },
+        data: { status: 'APPROVED', adminNote, processedAt: new Date() },
+      });
+      return res.json(success('Withdrawal approved'));
+    } else {
+      // Reject — refund balance
+      await prisma.$transaction(async (tx) => {
+        await tx.withdrawalRequest.update({
+          where: { id },
+          data: { status: 'REJECTED', adminNote, processedAt: new Date() },
+        });
+
+        await tx.driverWallet.update({
+          where: { id: withdrawal.walletId },
+          data: {
+            balance: { increment: withdrawal.amount },
+            totalWithdrawn: { decrement: withdrawal.amount },
+          },
+        });
+
+        await tx.walletTransaction.create({
+          data: {
+            walletId: withdrawal.walletId,
+            type: 'BONUS',
+            amount: withdrawal.amount,
+            description: `Withdrawal rejected — refund`,
+          },
+        });
+      });
+
+      return res.json(success('Withdrawal rejected and refunded'));
+    }
+  } catch (err) {
+    console.error('processWithdrawal error:', err);
+    return res.status(500).json(error('Failed to process withdrawal', err.message));
+  }
+};
+
+module.exports = {
+  getDashboardStats,
+  getAllDrivers,
+  addDriver,
+  verifyDriver,
+  approveDriver,
+  getAllOrders,
+  getRevenue,
+  getAdminRestaurants,
+  getAdminGoSend,
+  deleteUser,
+  getWithdrawalRequests,
+  processWithdrawal,
+};

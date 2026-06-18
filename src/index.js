@@ -21,6 +21,9 @@ const voucherRoutes = require('./routes/voucher.routes');
 const ratingRoutes = require('./routes/rating.routes');
 const adminRoutes = require('./routes/admin.routes');
 const testRoutes = require('./routes/test.routes');
+const gosendRoutes = require('./routes/gosend.routes');
+const restaurantRoutes = require('./routes/restaurant.routes');
+const walletRoutes = require('./routes/wallet.routes');
 
 const app = express();
 const server = http.createServer(app);
@@ -74,6 +77,10 @@ app.use('/api/vouchers', voucherRoutes);
 app.use('/api/ratings', ratingRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/test', testRoutes);
+app.use('/api/gosend', gosendRoutes);
+app.use('/api/wallet', walletRoutes);
+// Restaurant & food-order routes share the same router (mounted at /api)
+app.use('/api', restaurantRoutes);
 
 // ─── 404 Handler ─────────────────────────────────────────────────────────────
 app.use(notFoundHandler);

@@ -6,7 +6,8 @@ const { success, error } = require('../utils/response.helper');
 const prisma = new PrismaClient();
 
 /**
- * POST /api/ratings/submit
+ * POST /api/ratings
+ * Passenger rates a driver (1-5 stars + comment)
  */
 const submitRating = async (req, res) => {
   const { orderId, score, comment } = req.body;
@@ -44,7 +45,7 @@ const submitRating = async (req, res) => {
       data: { orderId, raterId, ratedId, score: parseInt(score), comment },
     });
 
-    // Update driver's average rating
+    // Update driver's average rating automatically
     if (isPassenger && order.driverId) {
       const driverProfile = await prisma.driverProfile.findUnique({
         where: { userId: order.driverId },
@@ -71,6 +72,7 @@ const submitRating = async (req, res) => {
 
 /**
  * GET /api/ratings/driver/:driverId
+ * Get all ratings for a specific driver
  */
 const getDriverRatings = async (req, res) => {
   const { driverId } = req.params;
@@ -89,15 +91,25 @@ const getDriverRatings = async (req, res) => {
       prisma.rating.count({ where: { ratedId: driverId } }),
     ]);
 
-    const avgScore = ratings.length > 0
-      ? ratings.reduce((s, r) => s + r.score, 0) / ratings.length
+    // Calculate average from all ratings, not just this page
+    const allScores = await prisma.rating.findMany({
+      where: { ratedId: driverId },
+      select: { score: true },
+    });
+    const avgScore = allScores.length > 0
+      ? allScores.reduce((s, r) => s + r.score, 0) / allScores.length
       : 0;
 
     return res.json(success('Driver ratings retrieved', {
       ratings,
       averageScore: Math.round(avgScore * 10) / 10,
       total,
-      pagination: { total, page: parseInt(page), limit: parseInt(limit), totalPages: Math.ceil(total / parseInt(limit)) },
+      pagination: {
+        total,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        totalPages: Math.ceil(total / parseInt(limit)),
+      },
     }));
   } catch (err) {
     console.error('getDriverRatings error:', err);
@@ -105,4 +117,43 @@ const getDriverRatings = async (req, res) => {
   }
 };
 
-module.exports = { submitRating, getDriverRatings };
+/**
+ * GET /api/ratings/my
+ * Get ratings given by the logged-in passenger
+ */
+const getMyRatings = async (req, res) => {
+  const raterId = req.user.id;
+  const { page = 1, limit = 20 } = req.query;
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+
+  try {
+    const [ratings, total] = await Promise.all([
+      prisma.rating.findMany({
+        where: { raterId },
+        include: {
+          rated: { select: { id: true, name: true } },
+          order: { select: { id: true, pickupAddress: true, destAddress: true, createdAt: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: parseInt(limit),
+      }),
+      prisma.rating.count({ where: { raterId } }),
+    ]);
+
+    return res.json(success('My ratings retrieved', {
+      ratings,
+      pagination: {
+        total,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        totalPages: Math.ceil(total / parseInt(limit)),
+      },
+    }));
+  } catch (err) {
+    console.error('getMyRatings error:', err);
+    return res.status(500).json(error('Failed to get my ratings', err.message));
+  }
+};
+
+module.exports = { submitRating, getDriverRatings, getMyRatings };
