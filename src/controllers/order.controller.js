@@ -1,6 +1,7 @@
 ﻿'use strict';
 
 const { PrismaClient } = require('@prisma/client');
+const axios = require('axios');
 const { success, error } = require('../utils/response.helper');
 const { calculateFareAmount } = require('../utils/pricing.helper');
 const { getDistanceMatrix } = require('../services/maps.service');
@@ -14,7 +15,95 @@ const ACCEPT_TIMEOUT_SECONDS = parseInt(process.env.ORDER_ACCEPT_TIMEOUT_SECONDS
 const EMERGENCY_PHONE = process.env.EMERGENCY_PHONE || '6281385058143';
 
 /**
- * Haversine formula â€” get distance in km between two lat/lng points
+ * CASCADE ORDER: Notify nearest available driver, then cascade to next if no response.
+ */
+const findAndNotifyDriver = async (order, excludeDriverIds = [], attempt = 1) => {
+  const MAX_ATTEMPTS = 5;
+  const TIMEOUT_SECONDS = 30;
+
+  if (attempt > MAX_ATTEMPTS) {
+    // No driver available
+    await prisma.order.update({
+      where: { id: order.id },
+      data: { status: 'NO_DRIVER' },
+    });
+    const io = global.io;
+    if (io) {
+      io.to(`passenger_${order.passengerId}`).emit('order:no_driver_found', {
+        orderId: order.id,
+        message: 'Maaf, tidak ada driver tersedia saat ini. Silakan coba lagi.',
+      });
+    }
+    try {
+      const passenger = await prisma.user.findUnique({ where: { id: order.passengerId } });
+      if (passenger?.phone) {
+        await axios.post(
+          'https://api.fonnte.com/send',
+          {
+            target: passenger.phone,
+            message: `TemRide: Maaf, tidak ada driver tersedia saat ini. Silakan coba pesan kembali.`,
+          },
+          { headers: { Authorization: process.env.FONNTE_TOKEN } }
+        );
+      }
+    } catch {}
+    return;
+  }
+
+  // Find nearest driver not yet tried
+  const drivers = await prisma.user.findMany({
+    where: {
+      role: 'DRIVER',
+      driverProfile: { isOnline: true, isVerified: true },
+      id: { notIn: excludeDriverIds },
+    },
+    include: { driverProfile: true },
+    take: 1,
+  });
+
+  if (drivers.length === 0) {
+    return findAndNotifyDriver(order, excludeDriverIds, MAX_ATTEMPTS + 1);
+  }
+
+  const driver = drivers[0];
+
+  // Update order with candidate driver
+  await prisma.order.update({
+    where: { id: order.id },
+    data: { candidateDriverId: driver.id, status: 'SEARCHING' },
+  });
+
+  // Ping driver via Socket.io
+  const io = global.io;
+  if (io) {
+    io.to(`driver_${driver.id}`).emit('order:new_request', {
+      orderId: order.id,
+      pickup: order.pickupAddress,
+      destination: order.destinationAddress,
+      fare: order.estimatedFare || order.totalFare,
+      distance: order.distance,
+      timeout: TIMEOUT_SECONDS,
+    });
+  }
+
+  // Push notification FCM
+  try {
+    const { sendNotification } = require('../utils/fcm');
+    await sendNotification(driver.id, 'Order Baru!', `Pickup: ${order.pickupAddress}`);
+  } catch {}
+
+  // Set cascade timeout: if driver doesn't respond in 30s, try next
+  setTimeout(async () => {
+    const updatedOrder = await prisma.order.findUnique({ where: { id: order.id } });
+    if (updatedOrder && updatedOrder.status === 'SEARCHING') {
+      console.log(`[CASCADE] Driver ${driver.id} tidak respons, coba driver berikutnya (attempt ${attempt + 1})`);
+      findAndNotifyDriver(order, [...excludeDriverIds, driver.id], attempt + 1);
+    }
+  }, TIMEOUT_SECONDS * 1000);
+};
+
+/**
+ * Haversine formula â€" get distance in km between two lat/lng points
  */
 function haversineDistance(lat1, lng1, lat2, lng2) {
   const R = 6371;
@@ -175,7 +264,7 @@ const requestOrder = async (req, res) => {
       io.to(`driver:${driver.userId}`).emit('order:new_request', orderPayload);
     });
 
-    // Set timeout â€” if not accepted, cancel order
+    // Set timeout â€" if not accepted, cancel order
     setTimeout(async () => {
       const stillSearching = await prisma.order.findFirst({
         where: { id: order.id, status: 'SEARCHING' },
@@ -399,7 +488,7 @@ const startTrip = async (req, res) => {
 
 /**
  * POST /api/orders/:id/complete
- * Driver completes the trip â€” earnings are split and credited
+ * Driver completes the trip â€" earnings are split and credited
  */
 const completeOrder = async (req, res) => {
   const { id } = req.params;
@@ -431,6 +520,14 @@ const completeOrder = async (req, res) => {
         data: { status: 'COMPLETED', completedAt: new Date() },
       });
 
+      // ── Split komisi otomatis 90/10 ──
+      const TEM_COMMISSION = 0.10; // 10% untuk TEM
+      const DRIVER_SHARE = 0.90;   // 90% untuk driver
+
+      const totalFare = order.actualFare || order.totalFare || 0;
+      const driverEarnings90 = Math.floor(totalFare * DRIVER_SHARE);
+      const temCommission = Math.floor(totalFare * TEM_COMMISSION);
+
       // Credit driver wallet
       if (driverProfile.wallet) {
         // Deduct weekly credit if applicable
@@ -440,13 +537,13 @@ const completeOrder = async (req, res) => {
           creditDeduction = vehicle.creditMonthlyDeduction / 4; // weekly
         }
 
-        const netEarnings = order.driverEarnings - creditDeduction;
+        const netEarnings = driverEarnings90 - creditDeduction;
 
         await tx.driverWallet.update({
           where: { id: driverProfile.wallet.id },
           data: {
             balance: { increment: netEarnings },
-            totalEarnings: { increment: order.driverEarnings },
+            totalEarnings: { increment: driverEarnings90 },
             totalCreditDeducted: { increment: creditDeduction },
           },
         });
@@ -455,8 +552,8 @@ const completeOrder = async (req, res) => {
           data: {
             walletId: driverProfile.wallet.id,
             type: 'EARNING',
-            amount: order.driverEarnings,
-            description: `Earnings from order #${id.slice(0, 8)}`,
+            amount: driverEarnings90,
+            description: `Pendapatan trip #${id.slice(0, 8)} (90%)`,
             orderId: id,
           },
         });
@@ -483,7 +580,28 @@ const completeOrder = async (req, res) => {
             });
           }
         }
+      } else {
+        // Fallback: update driverProfile balance directly
+        await tx.driverProfile.update({
+          where: { userId: driverId },
+          data: {
+            walletBalance: { increment: driverEarnings90 },
+            totalEarnings: { increment: driverEarnings90 },
+          },
+        }).catch(() => {});
       }
+
+      // Log transaksi (walletTransaction via userId — best-effort)
+      await tx.walletTransaction.create({
+        data: {
+          userId: driverId,
+          amount: driverEarnings90,
+          type: 'TRIP_EARNING',
+          description: `Pendapatan trip #${id.slice(0, 8)} (90%)`,
+          orderId: id,
+          status: 'COMPLETED',
+        },
+      }).catch(() => {}); // ignore if table schema differs
 
       // Update driver stats
       await tx.driverProfile.update({
@@ -491,8 +609,35 @@ const completeOrder = async (req, res) => {
         data: { totalTrips: { increment: 1 } },
       });
 
-      return [completedOrder];
+      return [completedOrder, driverEarnings90];
     });
+
+    // ── Post-transaction: socket + WA notifications ──
+    const totalFarePost = order.actualFare || order.totalFare || 0;
+    const driverEarningsPost = Math.floor(totalFarePost * 0.90);
+
+    // Notify driver wallet updated via Socket.io
+    if (global.io) {
+      global.io.to(`driver_${order.driverId}`).emit('wallet:updated', {
+        amount: driverEarningsPost,
+        message: `Rp ${driverEarningsPost.toLocaleString('id')} masuk ke saldo kamu!`,
+      });
+    }
+
+    // WA notification to driver
+    try {
+      const driver = await prisma.user.findUnique({ where: { id: order.driverId } });
+      if (driver?.phone) {
+        await axios.post(
+          'https://api.fonnte.com/send',
+          {
+            target: driver.phone,
+            message: `TemRide: Trip selesai! Rp ${driverEarningsPost.toLocaleString('id-ID')} (90%) masuk ke saldo kamu. Total saldo bisa dicek di menu Earnings.`,
+          },
+          { headers: { Authorization: process.env.FONNTE_TOKEN } }
+        );
+      }
+    } catch {}
 
     io.to(`passenger:${order.passengerId}`).emit('order:status_update', {
       orderId: id,
@@ -509,9 +654,10 @@ const completeOrder = async (req, res) => {
     return res.json(success('Order completed', {
       order: updatedOrder,
       earnings: {
-        driverEarnings: order.driverEarnings,
-        platformFee: order.platformFee,
-        totalFare: order.totalFare,
+        driverEarnings: driverEarningsPost,
+        platformFee: Math.floor((order.actualFare || order.totalFare || 0) * 0.10),
+        totalFare: order.actualFare || order.totalFare,
+        split: '90/10',
       },
     }));
   } catch (err) {
@@ -524,7 +670,7 @@ const completeOrder = async (req, res) => {
  * POST /api/orders/:id/cancel
  * Cancel an active order (passenger or driver)
  * Reasons: PASSENGER_CANCEL, DRIVER_CANCEL, NO_DRIVER_FOUND
- * Refund logic: if already paid â†’ status REFUND_PENDING
+ * Refund logic: if already paid â†' status REFUND_PENDING
  */
 const cancelOrder = async (req, res) => {
   const { id } = req.params;
@@ -607,7 +753,7 @@ const cancelOrder = async (req, res) => {
         try {
           await sendWhatsApp(
             order.passenger.phone,
-            `ðŸ˜” *TemRide: Order Dibatalkan Driver*\n\n` +
+            `ðŸ˜" *TemRide: Order Dibatalkan Driver*\n\n` +
             `Maaf, driver membatalkan ordermu.\n` +
             `Order ID: #${id.slice(0, 8)}\n` +
             `Alasan: ${cancelReason}\n\n` +

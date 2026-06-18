@@ -43,6 +43,7 @@ initSocket(io);
 
 // Make io accessible in controllers
 app.set('io', io);
+global.io = io; // make available globally for cascade order logic
 
 // ─── Core Middleware ─────────────────────────────────────────────────────────
 app.use(helmet());

@@ -542,6 +542,48 @@ const getAllPassengers = async (req, res) => {
   }
 };
 
+/**
+ * GET /api/admin/drivers/:driverId/metrics
+ * Driver performance metrics (7-day window)
+ */
+const getDriverMetrics = async (req, res) => {
+  try {
+    const { driverId } = req.params;
+    const now = new Date();
+    const weekAgo = new Date(now - 7 * 24 * 60 * 60 * 1000);
+
+    const [orders, acceptedOrders, cancelledOrders, ratings] = await Promise.all([
+      prisma.order.count({ where: { driverId, createdAt: { gte: weekAgo } } }),
+      prisma.order.count({ where: { driverId, status: { not: 'CANCELLED' }, createdAt: { gte: weekAgo } } }),
+      prisma.order.count({ where: { driverId, status: 'CANCELLED', createdAt: { gte: weekAgo } } }),
+      prisma.rating.aggregate({ where: { driverId }, _avg: { rating: true }, _count: true }),
+    ]);
+
+    const acceptanceRate = orders > 0 ? Math.round((acceptedOrders / orders) * 100) : 100;
+    const cancellationRate = acceptedOrders > 0 ? Math.round((cancelledOrders / acceptedOrders) * 100) : 0;
+    const avgRating = ratings._avg.rating || 5.0;
+
+    let performanceStatus = 'GOOD';
+    if (avgRating < 4.0 || cancellationRate > 30) performanceStatus = 'WARNING';
+    if (avgRating < 3.5 || cancellationRate > 50) performanceStatus = 'CRITICAL';
+
+    return res.json({
+      success: true,
+      metrics: {
+        acceptanceRate,
+        cancellationRate,
+        avgRating: Math.round(avgRating * 10) / 10,
+        totalTrips: acceptedOrders,
+        performanceStatus,
+        totalRatings: ratings._count,
+      },
+    });
+  } catch (err) {
+    console.error('getDriverMetrics error:', err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 module.exports = {
   getDashboardStats,
   getAllDrivers,
@@ -556,4 +598,5 @@ module.exports = {
   getWithdrawalRequests,
   processWithdrawal,
   getAllPassengers,
+  getDriverMetrics,
 };

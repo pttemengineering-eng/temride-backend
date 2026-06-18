@@ -22,6 +22,9 @@ router.get('/revenue', adminController.getRevenue);
 // GET /api/admin/drivers — List all drivers + status + rating
 router.get('/drivers', adminController.getAllDrivers);
 
+// GET /api/admin/drivers/:driverId/metrics — Driver performance metrics
+router.get('/drivers/:driverId/metrics', adminController.getDriverMetrics);
+
 // POST /api/admin/drivers — Add driver manually
 router.post('/drivers', adminController.addDriver);
 
