@@ -20,6 +20,7 @@ const paymentRoutes = require('./routes/payment.routes');
 const voucherRoutes = require('./routes/voucher.routes');
 const ratingRoutes = require('./routes/rating.routes');
 const adminRoutes = require('./routes/admin.routes');
+const testRoutes = require('./routes/test.routes');
 
 const app = express();
 const server = http.createServer(app);
@@ -72,6 +73,7 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/vouchers', voucherRoutes);
 app.use('/api/ratings', ratingRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/test', testRoutes);
 
 // ─── 404 Handler ─────────────────────────────────────────────────────────────
 app.use(notFoundHandler);
