@@ -163,6 +163,54 @@ function initSocket(io) {
       }
     });
 
+    // ─── Chat Events ──────────────────────────────────────────────────────
+
+    /**
+     * Join chat room for an order
+     * Payload: { orderId, userId }
+     */
+    socket.on('chat:join', ({ orderId, userId }) => {
+      if (!orderId) return;
+      socket.join(`chat_${orderId}`);
+      console.log(`[CHAT] User ${userId} join room chat_${orderId}`);
+    });
+
+    /**
+     * Send message via socket
+     * Payload: { orderId, userId, message, senderRole }
+     */
+    socket.on('chat:send', async ({ orderId, userId, message, senderRole } = {}) => {
+      if (!orderId || !userId || !message) return;
+
+      const msgData = {
+        id: Date.now().toString(),
+        orderId,
+        senderId: userId,
+        senderRole,
+        message,
+        createdAt: new Date().toISOString()
+      };
+
+      // Broadcast ke semua di room
+      io.to(`chat_${orderId}`).emit('chat:new_message', msgData);
+
+      // Simpan ke DB (async, tidak block)
+      try {
+        await prisma.message.create({
+          data: { orderId, senderId: userId, message }
+        }).catch(() => {}); // ignore jika tabel belum ada
+      } catch (_) {}
+    });
+
+    /**
+     * Leave chat room
+     * Payload: { orderId }
+     */
+    socket.on('chat:leave', ({ orderId } = {}) => {
+      if (!orderId) return;
+      socket.leave(`chat_${orderId}`);
+    });
+
     // ─── Order Broadcasting ────────────────────────────────────────────────
 
     /**

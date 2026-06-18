@@ -109,6 +109,7 @@ model User {
   foodOrdersAsDriver    FoodOrder[]    @relation("FoodOrderDriver")
   goSendOrdersAsPassenger GoSendOrder[] @relation("GoSendPassenger")
   goSendOrdersAsDriver    GoSendOrder[] @relation("GoSendDriver")
+  messagesSent            Message[]
 
   @@map("users")
 }
@@ -195,6 +196,7 @@ model Order {
   payment             Payment?
   rating              Rating?
   walletTransactions  WalletTransaction[]
+  messages            Message[]
 
   @@map("orders")
 }
@@ -474,4 +476,20 @@ model WithdrawalRequest {
   updatedAt     DateTime @updatedAt
 
   @@map("withdrawal_requests")
+}
+
+// ─── In-App Chat ──────────────────────────────────────────────────────────────
+
+model Message {
+  id        String   @id @default(uuid())
+  orderId   String
+  senderId  String
+  message   String
+  createdAt DateTime @default(now())
+
+  order  Order @relation(fields: [orderId], references: [id])
+  sender User  @relation(fields: [senderId], references: [id], map: "messages_sender_fkey")
+
+  @@index([orderId])
+  @@map("messages")
 }

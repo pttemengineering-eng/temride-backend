@@ -25,6 +25,7 @@ const gosendRoutes = require('./routes/gosend.routes');
 const restaurantRoutes = require('./routes/restaurant.routes');
 const walletRoutes = require('./routes/wallet.routes');
 const driverRegistrationRoutes = require('./routes/driverRegistration.routes');
+const pricingRoutes = require('./routes/pricing.routes');
 
 const app = express();
 const server = http.createServer(app);
@@ -85,6 +86,12 @@ app.use('/api/driver-registration', driverRegistrationRoutes);
 // Restaurant & food-order routes share the same router (mounted at /api)
 app.use('/api', restaurantRoutes);
 
+// Pricing & surge routes
+app.use('/api', pricingRoutes);
+
+// Chat routes
+app.use('/api', chatRoutes);
+
 // ─── 404 Handler ─────────────────────────────────────────────────────────────
 app.use(notFoundHandler);
 
@@ -120,3 +127,4 @@ process.on('uncaughtException', (error) => {
 });
 
 module.exports = { app, server, io };
+ io };
