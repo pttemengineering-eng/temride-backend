@@ -600,12 +600,12 @@ const getDriverMetrics = async (req, res) => {
       prisma.order.count({ where: { driverId, createdAt: { gte: weekAgo } } }),
       prisma.order.count({ where: { driverId, status: { not: 'CANCELLED' }, createdAt: { gte: weekAgo } } }),
       prisma.order.count({ where: { driverId, status: 'CANCELLED', createdAt: { gte: weekAgo } } }),
-      prisma.rating.aggregate({ where: { driverId }, _avg: { rating: true }, _count: true }),
+      prisma.rating.aggregate({ where: { ratedId: driverId }, _avg: { score: true }, _count: { _all: true } }),
     ]);
 
     const acceptanceRate = orders > 0 ? Math.round((acceptedOrders / orders) * 100) : 100;
     const cancellationRate = acceptedOrders > 0 ? Math.round((cancelledOrders / acceptedOrders) * 100) : 0;
-    const avgRating = ratings._avg.rating || 5.0;
+    const avgRating = ratings._avg.score || 5.0;
 
     let performanceStatus = 'GOOD';
     if (avgRating < 4.0 || cancellationRate > 30) performanceStatus = 'WARNING';
@@ -619,7 +619,7 @@ const getDriverMetrics = async (req, res) => {
         avgRating: Math.round(avgRating * 10) / 10,
         totalTrips: acceptedOrders,
         performanceStatus,
-        totalRatings: ratings._count,
+        totalRatings: ratings._count._all,
       },
     });
   } catch (err) {
