@@ -64,7 +64,7 @@ function initSocket(io) {
       // Anti-Fake GPS: validasi kecepatan tidak masuk akal
       const MAX_SPEED_KMH = 150; // lebih dari 150 km/h = suspicious
       if (speed != null && speed > MAX_SPEED_KMH) {
-        console.warn([ANTI-CHEAT] Driver  speed anomaly:  km/h);
+        console.warn(`[ANTI-CHEAT] Driver ${userId} speed anomaly: ${speed} km/h`);
         // Notify admin dashboard
         io.emit('admin:suspicious_driver', {
           userId,
