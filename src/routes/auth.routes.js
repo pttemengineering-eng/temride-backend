@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 
 const express = require('express');
 const router = express.Router();
@@ -16,6 +16,9 @@ router.post('/register', validateRegister, authController.register);
 
 // POST /api/auth/login
 router.post('/login', validateLogin, authController.login);
+
+// DEV LOGIN - bypass OTP for testing
+router.post('/dev-login', authController.devLogin);
 
 module.exports = router;
 
