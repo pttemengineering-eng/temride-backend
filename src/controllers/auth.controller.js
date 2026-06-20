@@ -33,15 +33,15 @@ const sendOTP = async (req, res) => {
       data: { phone, code, purpose, expiresAt },
     });
 
-    // Send via WhatsApp
+    // Send via WhatsApp (always - dev and production)
     const waResult = await sendWhatsAppOTP(phone, code);
 
-    if (process.env.NODE_ENV !== 'production') {
-      // Expose OTP in dev for easy testing
-      return res.json(success('OTP sent successfully', { otpDev: code, expiresAt }));
-    }
+    // In dev/staging: also expose OTP in response for easy testing
+    const responseData = process.env.NODE_ENV !== 'production'
+      ? { otpDev: code, expiresAt, waSent: !waResult.skipped }
+      : { expiresAt };
 
-    return res.json(success('OTP sent to your WhatsApp number', { expiresAt }));
+    return res.json(success('OTP sent to your WhatsApp number', responseData));
   } catch (err) {
     console.error('sendOTP error:', err);
     return res.status(500).json(error('Failed to send OTP', err.message));
@@ -59,7 +59,7 @@ const verifyOTP = async (req, res) => {
   const { phone, code, purpose = 'LOGIN' } = req.body;
 
   try {
-    // ── DEV BYPASS ──────────────────────────────────────────────────────────
+    // â”€â”€ DEV BYPASS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // When TEST_OTP_BYPASS=true is set (local dev/commissioning), OTP "123456"
     // always succeeds for any phone. Never enabled in production Railway env.
     const isTestBypass =
@@ -112,7 +112,7 @@ const verifyOTP = async (req, res) => {
     }
 
     if (!user && purpose === 'REGISTER') {
-      // User will be created in /register — just return OTP verified
+      // User will be created in /register â€” just return OTP verified
       return res.json(success('OTP verified. Proceed to complete registration.', { phone, verified: true }));
     }
 
@@ -204,7 +204,7 @@ const register = async (req, res) => {
 
 /**
  * POST /api/auth/login
- * Trigger OTP send — actual auth happens in verify-otp
+ * Trigger OTP send â€” actual auth happens in verify-otp
  */
 const login = async (req, res) => {
   const errors = validationResult(req);
