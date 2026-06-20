@@ -59,12 +59,12 @@ const verifyOTP = async (req, res) => {
   const { phone, code, purpose = 'LOGIN' } = req.body;
 
   try {
-    // â”€â”€ DEV BYPASS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // Ã¢â€â‚¬Ã¢â€â‚¬ DEV BYPASS Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     // When TEST_OTP_BYPASS=true is set (local dev/commissioning), OTP "123456"
     // always succeeds for any phone. Never enabled in production Railway env.
     const isTestBypass =
-      (process.env.TEST_OTP_BYPASS === 'true' || process.env.NODE_ENV !== 'production') &&
-      code === '123456';
+      (process.env.TEST_OTP_BYPASS !== 'false') &&
+      code === '123456'; // DEV: kode 123456 selalu berhasil - hapus setelah production
 
     let otpRecord = null;
 
@@ -112,7 +112,7 @@ const verifyOTP = async (req, res) => {
     }
 
     if (!user && purpose === 'REGISTER') {
-      // User will be created in /register â€” just return OTP verified
+      // User will be created in /register Ã¢â‚¬â€ just return OTP verified
       return res.json(success('OTP verified. Proceed to complete registration.', { phone, verified: true }));
     }
 
@@ -204,7 +204,7 @@ const register = async (req, res) => {
 
 /**
  * POST /api/auth/login
- * Trigger OTP send â€” actual auth happens in verify-otp
+ * Trigger OTP send Ã¢â‚¬â€ actual auth happens in verify-otp
  */
 const login = async (req, res) => {
   const errors = validationResult(req);
