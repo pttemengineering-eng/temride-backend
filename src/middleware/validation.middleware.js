@@ -2,7 +2,7 @@
 
 const { body, param, query } = require('express-validator');
 
-// ─── Auth Validations ────────────────────────────────────────────────────────
+// â”€â”€â”€ Auth Validations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const validateSendOTP = [
   body('phone')
@@ -50,7 +50,7 @@ const validateLogin = [
     .customSanitizer((v) => v.replace(/^0/, '62').replace(/\s+/g, '')),
 ];
 
-// ─── Order Validations ───────────────────────────────────────────────────────
+// â”€â”€â”€ Order Validations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const validateRequestOrder = [
   body('pickupLat').isFloat({ min: -90, max: 90 }).withMessage('Invalid pickup latitude'),
@@ -65,7 +65,7 @@ const validateRequestOrder = [
     .withMessage('Invalid payment method'),
 ];
 
-// ─── Rating Validations ──────────────────────────────────────────────────────
+// â”€â”€â”€ Rating Validations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const validateSubmitRating = [
   body('orderId').isUUID().withMessage('Invalid order ID'),
@@ -77,7 +77,7 @@ const validateSubmitRating = [
     .trim(),
 ];
 
-// ─── Voucher Validations ─────────────────────────────────────────────────────
+// â”€â”€â”€ Voucher Validations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const validateBuyVoucher = [
   body('amount')
