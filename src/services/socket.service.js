@@ -61,6 +61,21 @@ function initSocket(io) {
     socket.on('driver:location_update', async ({ userId, lat, lng, heading, speed } = {}) => {
       if (!userId || lat == null || lng == null) return;
 
+      // Anti-Fake GPS: validasi kecepatan tidak masuk akal
+      const MAX_SPEED_KMH = 150; // lebih dari 150 km/h = suspicious
+      if (speed != null && speed > MAX_SPEED_KMH) {
+        console.warn([ANTI-CHEAT] Driver  speed anomaly:  km/h);
+        // Notify admin dashboard
+        io.emit('admin:suspicious_driver', {
+          userId,
+          lat, lng, speed,
+          reason: 'Speed anomaly - possible fake GPS',
+          timestamp: new Date().toISOString(),
+        });
+        // Jangan update lokasi, return
+        return;
+      }
+
       try {
         await prisma.driverProfile.updateMany({
           where: { userId },
