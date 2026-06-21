@@ -273,11 +273,30 @@ const devLogin = async (req, res) => {
       user = await prisma.user.create({
         data: { phone, name, role: role.toUpperCase(), status: 'ACTIVE' }
       });
-      // Buat driver profile jika driver
-      if (role.toUpperCase() === 'DRIVER') {
-        await prisma.driverProfile.create({ data: { userId: user.id } });
-        await prisma.wallet.create({ data: { userId: user.id, balance: 0 } });
-      }
+    }
+
+    // Auto-setup driver profile dengan KYC APPROVED
+    if (role.toUpperCase() === 'DRIVER') {
+      await prisma.driverProfile.upsert({
+        where: { userId: user.id },
+        update: { kycStatus: 'APPROVED', isVerified: true },
+        create: {
+          userId: user.id,
+          kycStatus: 'APPROVED',
+          isVerified: true,
+          isOnline: false,
+          rating: 5.0,
+          totalTrips: 0,
+          vehicle: 'Motor Dev',
+          plateNumber: 'DEV001',
+          simNumber: 'SIMDEV001',
+        },
+      }).catch(() => {});
+      await prisma.wallet.upsert({
+        where: { userId: user.id },
+        update: {},
+        create: { userId: user.id, balance: 0 },
+      }).catch(() => {});
     }
 
     const token = jwt.sign(
